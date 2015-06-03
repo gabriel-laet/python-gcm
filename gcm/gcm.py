@@ -335,13 +335,21 @@ class GCM(object):
             priority=priority,
         )
 
+        info = None
+        attempt = 0
         backoff = self.BACKOFF_INITIAL_DELAY
+        has_error = False
+
         for attempt in range(retries):
+            try:
+                response = self.make_request(payload, is_json=True)
+                info = self.handle_json_response(response, registration_ids)
+                unsent_reg_ids = self.extract_unsent_reg_ids(info)
+                has_error = False
+            except GCMUnavailableException as e:
+                unsent_reg_ids = registration_ids
+                has_error = True
 
-            response = self.make_request(payload, is_json=True)
-            info = self.handle_json_response(response, registration_ids)
-
-            unsent_reg_ids = self.extract_unsent_reg_ids(info)
             if unsent_reg_ids:
                 registration_ids = unsent_reg_ids
                 sleep_time = backoff / 2 + random.randrange(backoff)
@@ -350,4 +358,8 @@ class GCM(object):
                     backoff *= 2
             else:
                 break
+
+        if has_error:
+            raise IOError("Could not make request after %d attempts" % attempt)
+
         return info
